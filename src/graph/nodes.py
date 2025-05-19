@@ -13,7 +13,7 @@ from langgraph.types import Command, interrupt
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from src.agents import create_agent
-from src.tools.search import LoggedTavilySearch
+from src.tools.search import LoggedTavilySearch, LoggedBochaSearch
 from src.tools import (
     crawl_tool,
     get_web_search_tool,
@@ -50,7 +50,7 @@ def background_investigation_node(
     logger.info("background investigation node is running.")
     configurable = Configuration.from_runnable_config(config)
     query = state["messages"][-1].content
-    if SELECTED_SEARCH_ENGINE == SearchEngine.TAVILY:
+    if SELECTED_SEARCH_ENGINE == SearchEngine.TAVILY.value:
         searched_content = LoggedTavilySearch(
             max_results=configurable.max_search_results
         ).invoke({"query": query})
@@ -63,6 +63,21 @@ def background_investigation_node(
         else:
             logger.error(
                 f"Tavily search returned malformed response: {searched_content}"
+            )
+    elif SELECTED_SEARCH_ENGINE == SearchEngine.BOCHA.value:
+        searched_content = LoggedBochaSearch(
+            count=configurable.max_search_results,
+            summary=True
+        ).invoke(query)
+        background_investigation_results = None
+        if isinstance(searched_content, list):
+            background_investigation_results = [
+                {"title": elem["title"], "content": elem["content"]}
+                for elem in searched_content if elem.get("type") == "page"
+            ]
+        else:
+            logger.error(
+                f"Bocha search returned malformed response: {searched_content}"
             )
     else:
         background_investigation_results = get_web_search_tool(
@@ -248,6 +263,7 @@ def coordinator_node(
 
 
 def reporter_node(state: State):
+    return Command(goto="__end__")
     """Reporter node that write a final report."""
     logger.info("Reporter write final report")
     current_plan = state.get("current_plan")
