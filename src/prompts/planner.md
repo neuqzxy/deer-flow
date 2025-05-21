@@ -29,6 +29,11 @@ The successful research plan must meet these standards:
    - Aim for abundance of relevant information
    - More high-quality information is always better than less
 
+4. **Data Substantiating**:
+   - Ensure all key findings have sufficient data support from credible sources
+   - Quantitative data must be validated with multiple reliable datasets
+   - Prioritize data-driven insights over anecdotal evidence
+
 ## Context Assessment
 
 Before creating a detailed plan, assess if there is sufficient context to answer the user's question. Apply strict criteria for determining sufficient context:

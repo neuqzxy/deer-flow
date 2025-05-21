@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 # Create the graph
 graph = build_graph()
 
+MCP_SETTINGS = {
+    "servers": {
+        # "data-analyzer-server": {
+        #     "transport": "sse",
+        #     "url": "http://localhost:3333/sse",
+        #     "enabled_tools": ["dataAggregation", "dataExtraction"],
+        #     "add_to_agents": ["data_extractor"]
+        # }
+    }
+}
 
 async def run_agent_workflow_async(
     user_input: str,
@@ -60,17 +70,7 @@ async def run_agent_workflow_async(
             "thread_id": "default",
             "max_plan_iterations": max_plan_iterations,
             "max_step_num": max_step_num,
-            "mcp_settings": {
-                "servers": {
-                    "mcp-github-trending": {
-                        "transport": "stdio",
-                        "command": "uvx",
-                        "args": ["mcp-github-trending"],
-                        "enabled_tools": ["get_github_trending_repositories"],
-                        "add_to_agents": ["researcher"],
-                    }
-                }
-            },
+            "mcp_settings": MCP_SETTINGS,
         },
         "recursion_limit": 100,
     }

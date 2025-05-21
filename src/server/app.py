@@ -29,6 +29,7 @@ from src.server.chat_request import (
 from src.server.mcp_request import MCPServerMetadataRequest, MCPServerMetadataResponse
 from src.server.mcp_utils import load_mcp_tools
 from src.tools import VolcengineTTS
+from src.workflow import MCP_SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,11 @@ async def chat_stream(request: ChatRequest):
     thread_id = request.thread_id
     if thread_id == "__default__":
         thread_id = str(uuid4())
+    mcp_settings =  request.mcp_settings or {}
+
+    # merge MCP_SETTINGS到mcp_settings里去
+    mcp_settings = {**MCP_SETTINGS, **mcp_settings}
+
     return StreamingResponse(
         _astream_workflow_generator(
             request.model_dump()["messages"],
@@ -64,7 +70,7 @@ async def chat_stream(request: ChatRequest):
             request.max_search_results,
             request.auto_accepted_plan,
             request.interrupt_feedback,
-            request.mcp_settings,
+            mcp_settings,
             request.enable_background_investigation,
         ),
         media_type="text/event-stream",

@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Annotated, Literal
 
+from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
@@ -95,7 +96,7 @@ def background_investigation_node(
 
 def planner_node(
     state: State, config: RunnableConfig
-) -> Command[Literal["human_feedback", "reporter"]]:
+) -> Command[Literal["human_feedback", "data_extractor"]]:
     """Planner node that generate the full plan."""
     logger.info("Planner generating full plan")
     configurable = Configuration.from_runnable_config(config)
@@ -128,7 +129,7 @@ def planner_node(
 
     # if the plan iterations is greater than the max plan iterations, return the reporter node
     if plan_iterations >= configurable.max_plan_iterations:
-        return Command(goto="reporter")
+        return Command(goto="data_extractor")
 
     full_response = ""
     if AGENT_LLM_MAP["planner"] == "basic":
@@ -146,7 +147,7 @@ def planner_node(
     except json.JSONDecodeError:
         logger.warning("Planner response is not a valid JSON")
         if plan_iterations > 0:
-            return Command(goto="reporter")
+            return Command(goto="data_extractor")
         else:
             return Command(goto="__end__")
     if curr_plan.get("has_enough_context"):
@@ -157,7 +158,7 @@ def planner_node(
                 "messages": [AIMessage(content=full_response, name="planner")],
                 "current_plan": new_plan,
             },
-            goto="reporter",
+            goto="data_extractor",
         )
     return Command(
         update={
@@ -263,7 +264,6 @@ def coordinator_node(
 
 
 def reporter_node(state: State):
-    return Command(goto="__end__")
     """Reporter node that write a final report."""
     logger.info("Reporter write final report")
     current_plan = state.get("current_plan")
@@ -277,6 +277,16 @@ def reporter_node(state: State):
     }
     invoke_messages = apply_prompt_template("reporter", input_)
     observations = state.get("observations", [])
+    
+    data_extractor_result = state.get("data_extractor_result", "")
+
+    if data_extractor_result:
+        invoke_messages.append(
+            HumanMessage(
+                content=f"Below are some data extraction results for the research task:\n\n{data_extractor_result}",
+                name="data_extractor_result",
+            )
+        )
 
     # Add a reminder about the new report format, citation style, and table usage
     invoke_messages.append(
@@ -503,3 +513,84 @@ async def coder_node(
         "coder",
         [python_repl_tool],
     )
+async def data_extractor_node(
+    state: State, config: RunnableConfig
+) -> Command[Literal["reporter"]]:
+    """Data extractor node that do data extraction."""
+    logger.info("Data extractor node is extracting data.")
+    current_plan = state.get("current_plan")
+    input_ = {
+        "messages": [
+            HumanMessage(
+                f"# Research Requirements\n\n## Task\n\n{current_plan.title}\n\n## Description\n\n{current_plan.thought}"
+            )
+        ],
+        "locale": state.get("locale", "en-US"),
+    }
+    invoke_messages = apply_prompt_template("data_extractor", input_)
+    observations = state.get("observations", [])
+
+    for observation in observations:
+        invoke_messages.append(
+            HumanMessage(
+                content=f"Below are some observations for the research task:\n\n{observation}",
+                name="observation",
+            )
+        )
+    logger.debug(f"Current invoke messages: {invoke_messages}")
+
+    configurable = Configuration.from_runnable_config(config)
+    mcp_servers = {}
+    enabled_tools = {}
+    agent_type = "data_extractor"
+    response_content = ""
+
+    default_recursion_limit = 25
+    # Extract MCP server configuration for this agent type
+    # if configurable.mcp_settings:
+    #     for server_name, server_config in configurable.mcp_settings["servers"].items():
+    #         if (
+    #             server_config["enabled_tools"]
+    #             and agent_type in server_config["add_to_agents"]
+    #         ):
+    #             mcp_servers[server_name] = {
+    #                 k: v
+    #                 for k, v in server_config.items()
+    #                 if k in ("transport", "command", "args", "url", "env")
+    #             }
+    #             for tool_name in server_config["enabled_tools"]:
+    #                 enabled_tools[tool_name] = server_name
+    # if mcp_servers:
+    #     async with MultiServerMCPClient(mcp_servers) as client:
+    #         loaded_tools = []
+    #         for tool in client.get_tools():
+    #             if tool.name in enabled_tools:
+    #                 tool.description = (
+    #                     f"Powered by '{enabled_tools[tool.name]}'.\n{tool.description}"
+    #                 )
+    #                 loaded_tools.append(tool)
+    #         agent = create_react_agent(
+    #                 name=agent_type,
+    #                 model=get_llm_by_type(AGENT_LLM_MAP[agent_type]),
+    #                 tools=loaded_tools,
+    #                 prompt=lambda state: apply_prompt_template(agent_type, state),
+    #             )
+    #         result = await agent.ainvoke(input={"messages": invoke_messages}, config={"recursion_limit": default_recursion_limit})
+    #         response_content = result["messages"][-1].content
+    #         print("Agent 响应内容:", response_content)
+            
+    #         # 确保 response_content 是字符串
+    #         if not isinstance(response_content, str):
+    #             response_content = str(response_content)
+    # else:
+    response = get_llm_by_type(AGENT_LLM_MAP["data_extractor"]).invoke(invoke_messages)
+    response_content = response.content
+    logger.info(f"data_extractor response: {response_content}")
+
+    return Command(
+        update={
+            "data_extractor_result": response_content,
+        },
+        goto="reporter",
+    )
+
